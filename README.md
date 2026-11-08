@@ -112,6 +112,38 @@ npm test
 
 The tests use Node's built-in test runner and need no install step.
 
+## Tests over real HTTP
+
+Run all automated tests with:
+
+    npm test
+
+The integration tests start an actual HTTP server on your computer (not a fake fetch). They test both Ollama NDJSON and OpenAI-compatible SSE, break connections after the first words, stall streams, send transient server errors, and verify cancellation, deadline enforcement, and safe retry boundaries. You do not need to install a model, GPU drivers, or extra dependencies.
+
+## Test against an installed local model
+
+First start your existing Ollama, LM Studio, or llama.cpp server. Then use the optional smoke test. It sends a short text prompt, prints the streamed answer, and reports whether the protocol completed.
+
+For Ollama, first run ollama list to find your installed model. For example:
+
+    MODEL_PROTOCOL=ollama MODEL_NAME=qwen2.5:7b npm run test:model
+
+The model name is an example; use one you actually have installed. The default Ollama endpoint is http://127.0.0.1:11434. If it is not running, start it normally (for example with ollama serve).
+
+For an OpenAI-compatible endpoint in LM Studio or llama.cpp:
+
+    MODEL_PROTOCOL=openai MODEL_ENDPOINT=http://127.0.0.1:1234/v1 MODEL_NAME=your-installed-model npm run test:model
+
+Replace the model and address with your server settings. For slow local models you can specify a larger deadline in milliseconds, for example MODEL_TIMEOUT_MS=300000.
+
+On Windows PowerShell, an Ollama example is:
+
+    $env:MODEL_PROTOCOL = 'ollama'
+    $env:MODEL_NAME = 'qwen2.5:7b'
+    npm run test:model
+
+The smoke test does not retry a real model call automatically: it only checks that one generation succeeds. To test interrupted streams and automatic recovery without breaking your own model server, run npm test. Those tests simulate failures predictably and confirm that reset replaces the partial output. A restarted generation is not a continuation of the old text.
+
 ## Why another wrapper?
 
 [Ky](https://github.com/sindresorhus/ky) is a more complete fetch client and already has a `totalTimeout` option. [p-retry](https://github.com/sindresorhus/p-retry) retries arbitrary async work with a time budget and cancellation. [Got](https://github.com/sindresorhus/got) is a capable Node.js HTTP client. Use one of them when you need its broader features. This project focuses on local text-model streams that can restart after partial output with an explicit reset event. The general fetch wrapper remains available for ordinary HTTP calls.
@@ -120,4 +152,10 @@ The design was informed by a timeout fix in [helper-with-conspects](https://gith
 
 ## License
 
-No license has been selected yet. The repository is public for review, but this version does not grant general reuse rights. Before publishing a package, the owner should choose a license and add its full text. GPL-3.0-only is suitable if the project should remain under copyleft. A permissive license such as MIT or Apache-2.0 is an option for independently written code if all copyright holders agree. Copying GPL-covered source into this project would change that analysis.
+Copyright (C) 2026 Stairrax.
+
+This project uses the GNU General Public License version 3 only (SPDX: GPL-3.0-only). See the complete terms in [LICENSE](LICENSE).
+
+You may use, modify, and redistribute the code under GPL-3.0-only without asking the author individually, provided that you comply with the license. For different licensing terms, including commercial agreements, please [contact the maintainer via GitHub Issues](https://github.com/Stairrax/reliable-requests/issues) and describe your intended use. Other terms require a separate written agreement; reaching out does not by itself grant permission.
+
+The code was independently written: no implementation was copied from helper-with-conspects. This is an unpublished draft; the package is still marked private.
