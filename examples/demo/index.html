@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Reliable Requests — Stream Lab</title>
+  <meta name="description" content="See how interrupted local AI streams recover without mixing responses.">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="https://github.com/Stairrax/reliable-requests" target="_blank" rel="noopener noreferrer"><span class="brandmark" aria-hidden="true">↺</span> reliable-requests</a>
+      <span class="pill"><span class="dot" aria-hidden="true"></span> Local-first stream lab</span>
+    </header>
+    <main>
+      <div class="intro">
+        <p class="eyebrow">OPEN SOURCE · GPL-3.0-ONLY</p>
+        <h1>When a stream breaks,<br><em>your answer stays clear.</em></h1>
+        <p class="subtitle">Try a controlled interruption, or connect to your own Ollama / OpenAI-compatible local model. Watch retry, reset, and response metrics in real time.</p>
+      </div>
+      <div class="layout">
+        <section class="panel config" aria-labelledby="configTitle">
+          <div class="panel-heading"><span class="overline">01 / CONNECTION</span><h2 id="configTitle">Configure your run</h2></div>
+          <fieldset class="mode">
+            <legend>Run mode</legend>
+            <label class="radio-item"><input type="radio" name="mode" value="simulation" checked><span><strong>Simulate interruption</strong><small>No AI model or download needed</small></span></label>
+            <label class="radio-item"><input type="radio" name="mode" value="live"><span><strong>Live local model</strong><small>Requires your running Ollama, LM Studio, or llama.cpp server</small></span></label>
+          </fieldset>
+          <div id="liveConfig" class="live-config" hidden>
+            <div class="field">
+              <label for="protocol">API protocol</label>
+              <select id="protocol"><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option></select>
+            </div>
+            <div class="field"><label for="endpoint">Local server address</label><input id="endpoint" type="url" value="http://127.0.0.1:11434" spellcheck="false"></div>
+            <div class="field"><label for="model">Installed model name</label><input id="model" type="text" value="qwen2.5:0.5b" spellcheck="false"></div>
+            <p class="hint">Only loopback addresses (localhost / 127.0.0.1) are accepted by this demo. Your browser may require local-server CORS permission.</p>
+          </div>
+          <div class="field"><label for="prompt">Your message</label><textarea id="prompt" rows="4">Explain what a network timeout is in simple terms.</textarea></div>
+          <div class="buttons">
+            <button id="run" type="button" class="primary">▶ Start stream</button>
+            <button id="stop" type="button" class="secondary" disabled>■ Stop</button>
+          </div>
+          <p class="hint">Text-only generations. A retry starts a new answer; the earlier partial text is discarded. No model data is sent to this demo server.</p>
+        </section>
+        <section class="panel result" aria-labelledby="outputTitle">
+          <div class="panel-heading"><span class="overline">02 / STREAM OUTPUT</span><div class="heading-line"><h2 id="outputTitle">Live response</h2><span id="status" class="status" role="status" aria-live="polite">Ready</span></div></div>
+          <div id="output" class="output" aria-label="Generated response text" aria-live="off">Your response will appear here.</div>
+          <div class="stats" aria-label="Stream metrics">
+            <div class="stat"><span>Attempts</span><strong id="attempts">0</strong></div>
+            <div class="stat"><span>Retries</span><strong id="retries">0</strong></div>
+            <div class="stat"><span>Resets</span><strong id="resets">0</strong></div>
+            <div class="stat"><span>Visible chars</span><strong id="characters">0</strong></div>
+            <div class="stat"><span>Elapsed</span><strong id="elapsed">0 ms</strong></div>
+            <div class="stat"><span>First text</span><strong id="firstDelta">—</strong></div>
+          </div>
+          <div class="trace">
+            <div class="trace-heading"><h3>Event timeline</h3><span>Latest events first</span></div>
+            <ol id="events" aria-label="Request events"></ol>
+          </div>
+        </section>
+      </div>
+      <footer><span>Made for local AI developers · No analytics or telemetry</span><a href="https://github.com/Stairrax/reliable-requests" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a></footer>
+    </main>
+  </div>
+</body>
+</html>
