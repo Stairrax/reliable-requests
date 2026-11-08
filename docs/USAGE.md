@@ -71,6 +71,8 @@ await streamLocalChat({
 
 For an OpenAI-compatible local server, set `protocol: 'openai'` (the default) and `endpoint: 'http://localhost:1234/v1'` for LM Studio or your llama.cpp server URL. The function adds `/v1/chat/completions` itself. `fetchImpl` and `headers` are optional. `signal` cancels the operation.
 
+The parser limits each NDJSON or SSE protocol line to **262,144 JavaScript characters** by default. This bounds the pending line buffer without limiting the total length of a completed answer. Override with `maxLineChars` (between 1 and 4,194,304), e.g. `maxLineChars: 524288` for an unusually large event. A line exceeding the limit fails with `StreamLineTooLongError` and `code === 'STREAM_LINE_TOO_LONG'`; this is **not automatically retried**. These limits describe parser memory, not model token limits.
+
 The callback receives `attempt`, `delta`, `retry`, `reset`, and `done` events. Its work should be synchronous. A retry begins only for a transient HTTP status (429, 500, 502, 503, 504), a network error, or a stream ending before its completion marker. Invalid requests and malformed protocol events fail without retry. The same total deadline covers the stream and retry waits. The function returns `{ attempts }` on success.
 
 A restart runs the model again and may produce different text. Local inference uses extra compute; remote services may charge again. For that reason automatic retries are enabled by default only for loopback addresses. To permit them for a remote endpoint, explicitly set `allowRemoteRetries: true`. This is **not** an exactly-once guarantee. This first version accepts text messages only and does not execute model tool calls. Browser apps also need their local server to allow the browser origin through CORS.
@@ -215,6 +217,18 @@ On Windows PowerShell, an Ollama example is:
     npm run test:model
 
 The smoke test does not retry a real model call automatically: it only checks that one generation succeeds. To test interrupted streams and automatic recovery without breaking your own model server, run npm test. Those tests simulate failures predictably and confirm that reset replaces the partial output. A restarted generation is not a continuation of the old text.
+
+## Optional long-stream Ollama stress check
+
+After the normal live-model and recovery checks pass, you can sample repeated, longer responses with a real local Ollama model. **Git Bash**:
+
+```bash
+MODEL_NAME=qwen2.5:0.5b npm run test:ollama:stress
+```
+
+The test runs two regular generations by default, counts text chunks and characters without retaining the answer, and prints a few JavaScript heap snapshots. It does **not** deliberately interrupt the model. A 240-second total deadline is applied **per generation**, and `Ctrl+C` stops the script.
+
+Set `STRESS_ROUNDS=1` for one run, or `MODEL_TIMEOUT_MS=300000` for a slower model. This uses only your local Ollama instance at `127.0.0.1`. CPU/GPU use will increase during generation. The sampled JavaScript heap **does not measure Ollama's own memory**, and passing the test does not prove that there are no memory leaks. If your model generates less than 500 characters, the script warns that the run was too short to be a strong long-answer stress sample.
 
 ## One-shot real Ollama connection-drop test
 

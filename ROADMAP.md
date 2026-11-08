@@ -2,7 +2,7 @@
 
 The focus is **predictable recovery for text-only local model streams**, not faster GPU inference or an all-purpose HTTP framework.
 
-## Included in the draft PR
+## Included in main
 
 - [x] Dependency-free fetch wrapper with a shared timeout and conservative retries
 - [x] Ollama NDJSON and OpenAI-compatible SSE text streams
@@ -19,7 +19,8 @@ The focus is **predictable recovery for text-only local model streams**, not fas
 - [ ] Verify a real installed model using the optional smoke test and the forced-disconnect command
 - [ ] Test the live demo in Chromium, Firefox, and Safari/WebKit
 - [ ] Verify and document CORS behavior for local inference servers
-- [ ] Audit stream parser memory limits for very long events
+- [x] Bound unfinished protocol lines and verify limits with stress tests
+- [ ] Exercise extreme payload sizes and very long generations
 - [ ] Check large answers and slower CPU inference
 - [ ] Get feedback from outside developers
 - [ ] Review package metadata and third-party license handling

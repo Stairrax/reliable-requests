@@ -8,7 +8,19 @@ export class StreamInterruptedError extends Error {
   }
 }
 
+export class StreamLineTooLongError extends Error {
+  constructor(maxLineChars) {
+    super(`A model stream line exceeded the ${maxLineChars} character limit`);
+    this.name = 'StreamLineTooLongError';
+    this.code = 'STREAM_LINE_TOO_LONG';
+    this.maxLineChars = maxLineChars;
+  }
+}
+
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const DEFAULT_MAX_LINE_CHARS = 262_144;
+const HARD_MAX_LINE_CHARS = 4_194_304;
+const MAX_DECODE_CHUNK_BYTES = 16 * 1024;
 const abortError = () => new DOMException('Request cancelled', 'AbortError');
 
 function isLoopback(url) {
@@ -25,7 +37,7 @@ function delay(ms, signal) {
   });
 }
 
-async function readStream(response, protocol, signal, emit) {
+async function readStream(response, protocol, signal, emit, maxLineChars) {
   if (!response.body) throw new StreamInterruptedError('The response has no stream');
   const reader = response.body.getReader();
   const abort = () => { reader.cancel().catch(() => {}); };
@@ -58,21 +70,38 @@ async function readStream(response, protocol, signal, emit) {
       if (event.done === true) complete = true;
     }
   };
+  // Limit *each protocol line*, not the entire answer. A response can have
+  // arbitrarily many short lines without growing our parser's pending buffer.
+  // Decode large network chunks in small slices to avoid huge intermediate strings.
+  const processText = text => {
+    let start = 0;
+    while (start < text.length && !complete) {
+      const newline = text.indexOf('\n', start);
+      const end = newline < 0 ? text.length : newline;
+      const segmentLength = end - start;
+      if (buffer.length + segmentLength > maxLineChars) {
+        throw new StreamLineTooLongError(maxLineChars);
+      }
+      buffer += text.slice(start, end);
+      if (newline < 0) break;
+      const current = buffer;
+      buffer = '';
+      line(current);
+      start = newline + 1;
+    }
+  };
   try {
     while (!complete) {
       const { value, done } = await reader.read();
       if (signal.aborted) throw abortError();
       if (done) {
-        buffer += decoder.decode();
-        if (buffer.trim()) line(buffer);
+        processText(decoder.decode());
+        if (!complete && buffer.trim()) line(buffer);
         break;
       }
-      buffer += decoder.decode(value, { stream: true });
-      let end;
-      while ((end = buffer.indexOf('\n')) >= 0 && !complete) {
-        const current = buffer.slice(0, end);
-        buffer = buffer.slice(end + 1);
-        line(current);
+      for (let start = 0; start < value.byteLength && !complete; start += MAX_DECODE_CHUNK_BYTES) {
+        const bytes = value.subarray(start, start + MAX_DECODE_CHUNK_BYTES);
+        processText(decoder.decode(bytes, { stream: true }));
       }
     }
     if (!complete) throw new StreamInterruptedError();
@@ -99,6 +128,7 @@ export async function streamLocalChat({
   headers,
   fetchImpl,
   allowRemoteRetries = false,
+  maxLineChars = DEFAULT_MAX_LINE_CHARS,
 } = {}) {
   if (protocol !== 'openai' && protocol !== 'ollama') throw new TypeError('protocol must be openai or ollama');
   if (!model || typeof model !== 'string') throw new TypeError('model is required');
@@ -108,6 +138,9 @@ export async function streamLocalChat({
   if (typeof onEvent !== 'function') throw new TypeError('onEvent is required');
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) throw new RangeError('invalid timeoutMs');
   if (!Number.isSafeInteger(retries) || retries < 0) throw new RangeError('invalid retries');
+  if (!Number.isSafeInteger(maxLineChars) || maxLineChars < 1 || maxLineChars > HARD_MAX_LINE_CHARS) {
+    throw new RangeError('maxLineChars must be an integer between 1 and 4194304');
+  }
   const base = new URL(endpoint);
   if (retries > 0 && !isLoopback(base) && !allowRemoteRetries) {
     throw new Error('Retries for remote servers require allowRemoteRetries: true');
@@ -139,7 +172,7 @@ export async function streamLocalChat({
           consume: (response, readSignal) => readStream(response, protocol, readSignal, text => {
             partial = true;
             emit({ type: 'delta', attempt, text });
-          }),
+          }, maxLineChars),
         });
         emit({ type: 'done', attempt });
         return { attempts };
