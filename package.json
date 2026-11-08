@@ -8,7 +8,9 @@
   },
   "scripts": {
     "test": "node --test",
-    "test:model": "node examples/verify-local-model.mjs"
+    "test:model": "node examples/verify-local-model.mjs",
+    "demo": "node examples/demo/server.mjs"
   },
-  "license": "GPL-3.0-only"
+  "license": "GPL-3.0-only",
+  "description": "Resilient local-model text streams with explicit reset on retry"
 }

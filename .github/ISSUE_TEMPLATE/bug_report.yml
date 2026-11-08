@@ -1,0 +1,42 @@
+name: Bug report
+description: Report incorrect retry, cancellation, timeout, or stream behavior
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Thank you for reporting a problem. Do not paste tokens, private prompts, or private URLs."
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: "Node version and OS, or browser and version"
+      placeholder: "Node 22 / Windows 11"
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options: ["General fetch", "Ollama", "OpenAI-compatible", "Demo / documentation", "Other"]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: "Use a minimal example and remove confidential data."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized error
+    validations:
+      required: true

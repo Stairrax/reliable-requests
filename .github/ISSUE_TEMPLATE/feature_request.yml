@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest improvements to local model stream reliability
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you solving?
+      description: "Describe the actual developer workflow or failure."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: How should it work?
+      description: "Mention cancellation and retry safety."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Existing libraries or workarounds
+      description: "Link any similar tool that already solves the problem."

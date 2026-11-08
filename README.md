@@ -1,6 +1,47 @@
 # reliable-requests
 
-A small, dependency-free set of request helpers for browser apps and Node.js 18+.
+[![Node tests](https://github.com/Stairrax/reliable-requests/actions/workflows/test.yml/badge.svg?branch=feat%2Ffirst-reliable-fetch)](https://github.com/Stairrax/reliable-requests/actions/workflows/test.yml)
+![Node 18+](https://img.shields.io/badge/Node.js-18%2B-3cba83)
+[![GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-8bc4ef)](LICENSE)
+
+**Recover from interrupted local AI streams without mixing two different answers.**
+
+A small, dependency-free JavaScript toolkit for Node.js 18+ and modern browsers. Built for text generation with Ollama, LM Studio, and llama.cpp. Works with any compatible installed model, including Qwen.
+
+## Try the visual demo
+
+```bash
+npm run demo
+```
+
+Open **http://127.0.0.1:4173**. Choose **Simulate interruption** (default), click **Start stream**, and watch the partial answer get discarded before a fresh one appears. **No neural model, GPU, or internet required** for this simulation.
+
+Switch to **Live local model** after starting Ollama, LM Studio, or llama.cpp. The demo runs in your browser and connects to your own local model directly, so the model server must allow the page origin through CORS. The static demo server neither stores messages nor proxies requests. The live demo accepts loopback endpoints only.
+
+## How recovery works
+
+```mermaid
+flowchart LR
+    A[Start generation] --> B{Stream completed?}
+    B -->|Yes| C[Done]
+    B -->|Interrupted| D{Retry budget left?}
+    D -->|No| E[Report error]
+    D -->|Yes| F[Retry and emit reset]
+    F --> G[Discard partial answer]
+    G --> A
+```
+
+**Important:** restarting is not continuing the same generation. The model might produce different words. The library emits `reset` so callers **replace**, not append to, the interrupted response. Only text-only requests are supported; tool calls are not automatically executed.
+
+## Three ways to try it
+
+| Goal | Command |
+| --- | --- |
+| Run unit + real HTTP fault tests | `npm test` |
+| Open the interactive browser demo | `npm run demo` |
+| Test an installed Ollama model | `MODEL_NAME=qwen2.5:0.5b npm run test:model` |
+
+The model name shown is an example: install a model with Ollama first, or use a model already present. For OpenAI-compatible local servers, see the [real-model instructions](#test-on-a-real-model-optional). On Windows PowerShell, use the environment-variable examples in that section.
 
 ## Local model streams
 
@@ -51,6 +92,34 @@ console.log(user);
 ```
 
 Without `consume`, the function returns a normal `Response` as soon as headers arrive. The deadline then ends, so later reads of `response.body` are **not** covered. Use `consume` whenever the full body or a stream must finish within the deadline.
+
+## Optional stream metrics
+
+Track the connection without changing request or retry behavior. No analytics are sent anywhere; the counters stay in your application.
+
+```js
+import { createStreamMetrics } from './src/metrics.js';
+import { streamLocalChat } from './src/local-chat.js';
+
+const metrics = createStreamMetrics();
+try {
+  await streamLocalChat({
+    endpoint: 'http://127.0.0.1:11434',
+    protocol: 'ollama',
+    model: 'your-installed-model',
+    messages: [{ role: 'user', content: 'Hello!' }],
+    onEvent(event) {
+      metrics.record(event);
+      // Render reset/delta events in your UI here.
+    },
+  });
+} finally {
+  metrics.finish();
+  console.log(metrics.snapshot());
+}
+```
+
+Metrics include attempts, retries, resets, text delta events, visible characters after the last reset, total received characters, first-text latency, and elapsed time. **Characters are not tokens**, and these measurements are not benchmarks of model inference speed. Results are read-only snapshots.
 
 ## Cancellation
 
@@ -110,7 +179,7 @@ Pass ordinary `fetch` options such as `headers`, `credentials`, and `method` alo
 npm test
 ```
 
-The tests use Node's built-in test runner and need no install step.
+The automated tests use Node's built-in test runner and require no dependency installation or AI model.
 
 ## Tests over real HTTP
 
@@ -149,6 +218,17 @@ The smoke test does not retry a real model call automatically: it only checks th
 [Ky](https://github.com/sindresorhus/ky) is a more complete fetch client and already has a `totalTimeout` option. [p-retry](https://github.com/sindresorhus/p-retry) retries arbitrary async work with a time budget and cancellation. [Got](https://github.com/sindresorhus/got) is a capable Node.js HTTP client. Use one of them when you need its broader features. This project focuses on local text-model streams that can restart after partial output with an explicit reset event. The general fetch wrapper remains available for ordinary HTTP calls.
 
 The design was informed by a timeout fix in [helper-with-conspects](https://github.com/Stairrax/helper-with-conspects). This implementation is written independently; no source code was copied from that GPL-3.0-only project.
+
+## Project status and contributing
+
+This is a **draft API**, not a published package. The code is in the [draft PR](https://github.com/Stairrax/reliable-requests/pull/1). No release has been published and `package.json` is intentionally `private: true`.
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to run tests and propose changes
+- [ROADMAP.md](ROADMAP.md) — steps before the first release
+- [GitHub Issues](https://github.com/Stairrax/reliable-requests/issues) — bug reports and features; remove access tokens and private prompts
+- [SECURITY.md](SECURITY.md) — security disclosure guidance
+
+Node 18 and 22 are tested in CI. Real installed models and different browsers still need hands-on verification; passing automation does not prove universal compatibility.
 
 ## License
 
