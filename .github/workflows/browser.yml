@@ -2,13 +2,17 @@ name: Browser smoke test
 
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main, 'feat/**', 'test/**']
   pull_request:
 
 jobs:
-  chromium:
+  browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,7 +20,9 @@ jobs:
           node-version: 22
       - name: Install Playwright for browser verification
         run: npm install --no-save --no-package-lock playwright@1.56.1
-      - name: Install headless Chromium
-        run: npx playwright install --with-deps chromium
-      - name: Verify demo in Chromium
+      - name: Install browser and system dependencies
+        run: npx playwright install --with-deps ${{ matrix.engine }}
+      - name: Verify demo in ${{ matrix.engine }}
+        env:
+          BROWSER_ENGINE: ${{ matrix.engine }}
         run: npm run test:browser
