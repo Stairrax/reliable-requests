@@ -2,7 +2,7 @@ name: Browser smoke test
 
 on:
   push:
-    branches: ['feat/**']
+    branches: [main, 'feat/**']
   pull_request:
 
 jobs:
