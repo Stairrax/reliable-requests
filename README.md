@@ -33,13 +33,14 @@ flowchart LR
 
 **Important:** restarting is not continuing the same generation. The model might produce different words. The library emits `reset` so callers **replace**, not append to, the interrupted response. Only text-only requests are supported; tool calls are not automatically executed.
 
-## Three ways to try it
+## Four ways to try it
 
 | Goal | Command |
 | --- | --- |
 | Run unit + real HTTP fault tests | `npm test` |
 | Open the interactive browser demo | `npm run demo` |
 | Test an installed Ollama model | `MODEL_NAME=qwen2.5:0.5b npm run test:model` |
+| Test a forced real Ollama disconnect | `MODEL_NAME=qwen2.5:0.5b npm run test:ollama:recovery` |
 
 The model name shown is an example: install a model with Ollama first, or use a model already present. For OpenAI-compatible local servers, see the [real-model instructions](#test-on-a-real-model-optional). On Windows PowerShell, use the environment-variable examples in that section.
 
@@ -212,6 +213,41 @@ On Windows PowerShell, an Ollama example is:
     npm run test:model
 
 The smoke test does not retry a real model call automatically: it only checks that one generation succeeds. To test interrupted streams and automatic recovery without breaking your own model server, run npm test. Those tests simulate failures predictably and confirm that reset replaces the partial output. A restarted generation is not a continuation of the old text.
+
+## One-shot real Ollama connection-drop test
+
+After the normal live-model test succeeds, you can check **recovery from an actual broken TCP stream** while Ollama stays running. This is an optional manual test and is not run automatically in CI because it requires a real installed model.
+
+In **Git Bash** on Windows (or a macOS/Linux shell):
+
+```bash
+MODEL_NAME=qwen2.5:0.5b npm run test:ollama:recovery
+```
+
+Choose a model from `ollama list`. The default is `qwen2.5:0.5b`. For a different local Ollama port, set `OLLAMA_ENDPOINT=http://127.0.0.1:YOUR_PORT`. To allow a slow model more time, set `MODEL_TIMEOUT_MS=300000`.
+
+In **Windows PowerShell**:
+
+```powershell
+$env:MODEL_NAME = 'qwen2.5:0.5b'
+npm run test:ollama:recovery
+```
+
+The script checks that the model is installed, then starts a **temporary, random-port proxy bound only to 127.0.0.1**. It allows only two authenticated, text-only Ollama chat requests. On the first, it forwards the first real generated text event and deliberately drops the TCP connection. `streamLocalChat` should retry, emit `reset` to discard the partial answer, and complete a second fresh generation. The proxy does not stop Ollama, change your network settings, or send prompts to an outside server. It closes automatically at the end.
+
+Expected success:
+
+```text
+Generation attempt 1
+First connection interrupted: retrying safely
+RESET: discarded partial text before the new answer
+Generation attempt 2
+Second generation completed
+
+PASS: 2 attempts, 1 real connection cut, 1 retry, 1 reset.
+```
+
+**Limits:** this generates twice, using extra local compute. It does **not** resume the interrupted generation or guarantee identical text. Do not use the fault proxy with remote or billable inference endpoints. The automatic CI test uses a fake local Ollama upstream with real TCP sockets, while this manual command checks against your actual installed model.
 
 ## Why another wrapper?
 

@@ -10,12 +10,13 @@ The focus is **predictable recovery for text-only local model streams**, not fas
 - [x] Cancellation and clear error classes
 - [x] Node 18/22 unit and localhost HTTP fault-injection tests
 - [x] Browser demo with simulated failures
+- [x] Real TCP fault injector with an automated fake-Ollama test and optional live-Ollama command
 - [x] Optional no-telemetry stream metrics
 - [x] GPL-3.0-only license and contributor guidance
 
 ## Before v0.1.0
 
-- [ ] Verify a real installed model using the optional smoke test
+- [ ] Verify a real installed model using the optional smoke test and the forced-disconnect command
 - [ ] Test the live demo in Chromium, Firefox, and Safari/WebKit
 - [ ] Verify and document CORS behavior for local inference servers
 - [ ] Audit stream parser memory limits for very long events
