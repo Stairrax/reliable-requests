@@ -218,6 +218,18 @@ On Windows PowerShell, an Ollama example is:
 
 The smoke test does not retry a real model call automatically: it only checks that one generation succeeds. To test interrupted streams and automatic recovery without breaking your own model server, run npm test. Those tests simulate failures predictably and confirm that reset replaces the partial output. A restarted generation is not a continuation of the old text.
 
+## Optional long-stream Ollama stress check
+
+After the normal live-model and recovery checks pass, you can sample repeated, longer responses with a real local Ollama model. **Git Bash**:
+
+```bash
+MODEL_NAME=qwen2.5:0.5b npm run test:ollama:stress
+```
+
+The test runs two regular generations by default, counts text chunks and characters without retaining the answer, and prints a few JavaScript heap snapshots. It does **not** deliberately interrupt the model. A 240-second total deadline is applied **per generation**, and `Ctrl+C` stops the script.
+
+Set `STRESS_ROUNDS=1` for one run, or `MODEL_TIMEOUT_MS=300000` for a slower model. This uses only your local Ollama instance at `127.0.0.1`. CPU/GPU use will increase during generation. The sampled JavaScript heap **does not measure Ollama's own memory**, and passing the test does not prove that there are no memory leaks. If your model generates less than 500 characters, the script warns that the run was too short to be a strong long-answer stress sample.
+
 ## One-shot real Ollama connection-drop test
 
 After the normal live-model test succeeds, you can check **recovery from an actual broken TCP stream** while Ollama stays running. This is an optional manual test and is not run automatically in CI because it requires a real installed model.

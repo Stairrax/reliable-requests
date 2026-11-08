@@ -11,7 +11,8 @@
     "test:model": "node examples/verify-local-model.mjs",
     "demo": "node examples/demo/server.mjs",
     "test:browser": "node scripts/browser-smoke.mjs",
-    "test:ollama:recovery": "node examples/verify-ollama-recovery.mjs"
+    "test:ollama:recovery": "node examples/verify-ollama-recovery.mjs",
+    "test:ollama:stress": "node examples/verify-ollama-stress.mjs"
   },
   "license": "GPL-3.0-only",
   "description": "Resilient local-model text streams with explicit reset on retry"
