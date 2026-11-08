@@ -76,8 +76,9 @@ test('OpenAI: 16,000 SSE events with small per-line limit', async () => {
   assert.equal(done, 1);
 });
 
-test('several completed generations release readers and preserve event totals', async () => {
+test('repeated generations complete and leave stream sources closed or cancelled', async () => {
   let cancelled = 0;
+  let closed = 0;
   let attempts = 0;
   let done = 0;
   const count = 900;
@@ -95,6 +96,7 @@ test('several completed generations release readers and preserve event totals', 
               controller.enqueue(encode.encode('{"done":true}\n'));
               emitted++;
             } else {
+              closed++;
               controller.close();
             }
           },
@@ -111,5 +113,7 @@ test('several completed generations release readers and preserve event totals', 
   }
   assert.equal(done, 8);
   assert.equal(attempts, 8);
-  assert.equal(cancelled, 8);
+  // The WHATWG stream implementation may pull ahead and close normally before
+  // readStream() cancels its reader; both outcomes release this stream source.
+  assert.equal(closed + cancelled, 8);
 });
