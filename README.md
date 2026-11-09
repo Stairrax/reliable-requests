@@ -64,7 +64,7 @@ Also included: `reliableRequest` for regular fetch calls and `createStreamMetric
 - [Detailed usage, API, and PowerShell instructions](docs/USAGE.md)
 - [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
-**Status:** early open-source implementation. Automated tests pass in Node.js 18/22 and Chromium; a Windows user verified live Qwen 2.5 0.5B responses, Stop, and recovery from a deliberately cut TCP connection. Other browsers, models, and very long responses still need testing.
+**Status:** early open-source implementation. Automated tests pass in Node.js 18/22 and Chromium; a Windows user verified live Qwen 2.5 0.5B responses, Stop, and recovery from a deliberately cut TCP connection. Live LM Studio and llama.cpp, other browsers, models, and very long responses still need testing. PR #3 checks simulated browser flows in Firefox and WebKit.
 
 ## License
 
