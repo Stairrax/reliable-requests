@@ -210,6 +210,7 @@ export async function streamLocalChat({
         const retryable = error instanceof StreamInterruptedError || error instanceof TypeError ||
           (error instanceof HttpError && RETRY_STATUSES.has(error.status));
         if (!retryable || attempt > retries) throw error;
+        if (error instanceof HttpError) error.response.body?.cancel().catch(() => {});
         emit({ type: 'retry', attempt, error, partial });
         try { await delay(Math.min(200 * 2 ** (attempt - 1), 3_000), controller.signal); }
         catch (waitError) { if (expired) throw new RequestTimeoutError(timeoutMs); throw waitError; }

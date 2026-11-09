@@ -82,3 +82,16 @@ test('a prefixed OpenAI endpoint works over a real HTTP connection', async () =>
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('a discarded retryable HTTP response is cancelled', async () => {
+  let cancelled = false;
+  let calls = 0;
+  await streamLocalChat({ ...opts, fetchImpl: async () => {
+    if (++calls === 1) return new Response(new ReadableStream({
+      cancel() { cancelled = true; },
+    }), { status: 503 });
+    return body('data: [DONE]\n\n');
+  } });
+  assert.equal(calls, 2);
+  assert.equal(cancelled, true);
+});
