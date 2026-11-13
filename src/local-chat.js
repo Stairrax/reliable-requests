@@ -17,6 +17,14 @@ export class StreamLineTooLongError extends Error {
   }
 }
 
+export class UnsupportedModelOutputError extends Error {
+  constructor() {
+    super('Tool calls are not supported by this text-only API');
+    this.name = 'UnsupportedModelOutputError';
+    this.code = 'UNSUPPORTED_MODEL_OUTPUT';
+  }
+}
+
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const DEFAULT_MAX_LINE_CHARS = 262_144;
 const HARD_MAX_LINE_CHARS = 4_194_304;
@@ -44,6 +52,7 @@ async function readStream(response, protocol, signal, emit, maxLineChars) {
   signal.addEventListener('abort', abort, { once: true });
   let buffer = '';
   let complete = false;
+  let finishReason = null;
   const decoder = new TextDecoder();
   const line = (raw) => {
     if (protocol === 'openai') {
@@ -56,7 +65,10 @@ async function readStream(response, protocol, signal, emit, maxLineChars) {
       try { event = JSON.parse(data); }
       catch { throw new Error('Invalid OpenAI-compatible stream event'); }
       if (event.error) throw new Error(event.error.message || 'Model stream error');
-      const content = event.choices?.[0]?.delta?.content;
+      const choice = event.choices?.[0];
+      if (choice?.delta?.tool_calls?.length || choice?.delta?.function_call || choice?.finish_reason === 'tool_calls' || choice?.finish_reason === 'function_call') throw new UnsupportedModelOutputError();
+      if (typeof choice?.finish_reason === 'string') finishReason = choice.finish_reason;
+      const content = choice?.delta?.content;
       if (typeof content === 'string' && content) emit(content);
     } else {
       const text = raw.trim();
@@ -65,6 +77,8 @@ async function readStream(response, protocol, signal, emit, maxLineChars) {
       try { event = JSON.parse(text); }
       catch { throw new Error('Invalid Ollama stream event'); }
       if (event.error) throw new Error(String(event.error));
+      if (event.message?.tool_calls?.length) throw new UnsupportedModelOutputError();
+      if (typeof event.done_reason === 'string') finishReason = event.done_reason;
       const content = event.message?.content;
       if (typeof content === 'string' && content) emit(content);
       if (event.done === true) complete = true;
@@ -105,6 +119,7 @@ async function readStream(response, protocol, signal, emit, maxLineChars) {
       }
     }
     if (!complete) throw new StreamInterruptedError();
+    return finishReason;
   } finally {
     signal.removeEventListener('abort', abort);
     reader.cancel().catch(() => {});
@@ -145,7 +160,13 @@ export async function streamLocalChat({
   if (retries > 0 && !isLoopback(base) && !allowRemoteRetries) {
     throw new Error('Retries for remote servers require allowRemoteRetries: true');
   }
-  const url = new URL(protocol === 'ollama' ? '/api/chat' : '/v1/chat/completions', base);
+  const path = base.pathname.replace(/\/+$/, '');
+  const suffix = protocol === 'ollama' ? '/api/chat'
+    : path.endsWith('/v1') ? '/chat/completions' : '/v1/chat/completions';
+  base.pathname = path + suffix;
+  base.search = '';
+  base.hash = '';
+  const url = base;
   const requestHeaders = new Headers(headers);
   requestHeaders.set('content-type', 'application/json');
   const body = JSON.stringify({ model, messages, stream: true });
@@ -158,7 +179,12 @@ export async function streamLocalChat({
   const started = performance.now();
   let partial = false;
   let attempts = 0;
-  const emit = event => { if (!controller.signal.aborted) onEvent(event); };
+  let callbackFailed = false;
+  const emit = event => {
+    if (!controller.signal.aborted) {
+      try { onEvent(event); } catch (error) { callbackFailed = true; throw error; }
+    }
+  };
   try {
     for (let attempt = 1; attempt <= retries + 1; attempt++) {
       attempts = attempt;
@@ -166,7 +192,7 @@ export async function streamLocalChat({
       emit({ type: 'attempt', attempt });
       try {
         const remaining = Math.max(1, Math.ceil(timeoutMs - (performance.now() - started)));
-        await reliableRequest(url, {
+        const finishReason = await reliableRequest(url, {
           method: 'POST', body, headers: requestHeaders, retries: 0,
           timeoutMs: remaining, signal: controller.signal, fetchImpl,
           consume: (response, readSignal) => readStream(response, protocol, readSignal, text => {
@@ -174,14 +200,17 @@ export async function streamLocalChat({
             emit({ type: 'delta', attempt, text });
           }, maxLineChars),
         });
-        emit({ type: 'done', attempt });
-        return { attempts };
+        const completion = finishReason === null ? {} : { finishReason };
+        emit({ type: 'done', attempt, ...completion });
+        return { attempts, ...completion };
       } catch (error) {
+        if (callbackFailed) throw error;
         if (expired || error instanceof RequestTimeoutError) throw new RequestTimeoutError(timeoutMs);
         if (controller.signal.aborted) throw abortError();
         const retryable = error instanceof StreamInterruptedError || error instanceof TypeError ||
           (error instanceof HttpError && RETRY_STATUSES.has(error.status));
         if (!retryable || attempt > retries) throw error;
+        if (error instanceof HttpError) error.response.body?.cancel().catch(() => {});
         emit({ type: 'retry', attempt, error, partial });
         try { await delay(Math.min(200 * 2 ** (attempt - 1), 3_000), controller.signal); }
         catch (waitError) { if (expired) throw new RequestTimeoutError(timeoutMs); throw waitError; }
