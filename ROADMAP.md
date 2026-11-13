@@ -19,7 +19,7 @@ The focus is **predictable recovery for text-only local model streams**, not fas
 - [x] Verify Ollama with Qwen 2.5 0.5B using the smoke test and forced-disconnect command (Windows; other models and platforms remain to be checked)
 - [x] Verify a normal streamed response with llama.cpp build 12212 and Qwen 2.5 0.5B on Windows
 - [ ] Verify interrupted stream recovery with llama.cpp and test live LM Studio
-- [ ] Test the live demo with a real model in Chromium, Firefox, and Safari/WebKit (simulated cross-browser checks are in PR #3)
+- [ ] Test the live demo with a real model in Chromium, Firefox, and Safari/WebKit (simulated smoke checks for Chromium, Firefox, and WebKit run in CI)
 - [ ] Verify and document CORS behavior for local inference servers
 - [x] Bound unfinished protocol lines and verify limits with stress tests
 - [ ] Exercise extreme payload sizes and very long generations
