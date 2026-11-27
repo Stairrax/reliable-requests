@@ -10,6 +10,8 @@ const assets = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/src/index.js', ['../../src/index.js', 'text/javascript; charset=utf-8']],
   ['/src/local-chat.js', ['../../src/local-chat.js', 'text/javascript; charset=utf-8']],
+  ['/src/retry.js', ['../../src/retry.js', 'text/javascript; charset=utf-8']],
+  ['/src/sse.js', ['../../src/sse.js', 'text/javascript; charset=utf-8']],
   ['/src/metrics.js', ['../../src/metrics.js', 'text/javascript; charset=utf-8']],
 ]);
 

@@ -9,7 +9,8 @@
 When a text stream breaks, `streamLocalChat` can start a fresh generation and emit **`reset`**, so an app does not mix the unfinished old answer with the new one.
 
 - Ollama and OpenAI-compatible endpoints (LM Studio, llama.cpp).
-- One total deadline, cancellation, and cautious retries.
+- One total deadline, cancellation, and a shared jittered retry policy that respects Retry-After.
+- Incremental SSE event parsing with multiline data and bounded line/event sizes.
 - Interactive demo, diagnostic metrics, and real-HTTP failure tests.
 
 > A retry **restarts** the generation; it cannot continue the same answer or guarantee identical text. Model calls may use additional compute or cost money. Remote automatic retries require explicit opt-in. The first version handles text only.

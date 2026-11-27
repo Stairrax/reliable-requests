@@ -55,6 +55,18 @@ try {
   assert.equal(await page.locator('#run').isEnabled(), true);
   assert.equal(await page.locator('#retries').textContent(), '0');
   assert.ok((await page.locator('#events').textContent()).includes('Cancelled by user'));
+  const sse = await page.evaluate(async () => {
+    const { streamLocalChat } = await import('/src/local-chat.js');
+    let text = '';
+    const result = await streamLocalChat({
+      endpoint: 'http://localhost:1234', model: 'synthetic', messages: [],
+      retries: 0, onEvent(event) { if (event.type === 'delta') text += event.text; },
+      fetchImpl: async () => new Response('data: {"choices":[\r\ndata: {"delta":{"content":"hello 🌍"}}\rdata: ]}\n\n' +
+        'data: [DONE]\r\r'),
+    });
+    return { text, attempts: result.attempts };
+  });
+  assert.deepEqual(sse, { text: 'hello 🌍', attempts: 1 });
   assert.deepEqual(errors, []);
   console.log('PASS: simulated recovery, metrics, and cancellation in ' + engineName);
 } finally {
