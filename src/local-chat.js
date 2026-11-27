@@ -1,19 +1,14 @@
 import { reliableRequest, HttpError, RequestTimeoutError } from './index.js';
+import { createLineParser, createSseParser } from './sse.js';
+import { isRetryableStatus, defaultShouldRetryError, retryDelayMs, pause, abortError, discardResponse } from './retry.js';
+
+export { StreamLineTooLongError, StreamEventTooLongError } from './sse.js';
 
 export class StreamInterruptedError extends Error {
   constructor(message = 'The model stream ended before completion') {
     super(message);
     this.name = 'StreamInterruptedError';
     this.code = 'STREAM_INTERRUPTED';
-  }
-}
-
-export class StreamLineTooLongError extends Error {
-  constructor(maxLineChars) {
-    super(`A model stream line exceeded the ${maxLineChars} character limit`);
-    this.name = 'StreamLineTooLongError';
-    this.code = 'STREAM_LINE_TOO_LONG';
-    this.maxLineChars = maxLineChars;
   }
 }
 
@@ -25,45 +20,31 @@ export class UnsupportedModelOutputError extends Error {
   }
 }
 
-const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const DEFAULT_MAX_LINE_CHARS = 262_144;
 const HARD_MAX_LINE_CHARS = 4_194_304;
 const MAX_DECODE_CHUNK_BYTES = 16 * 1024;
-const abortError = () => new DOMException('Request cancelled', 'AbortError');
 
 function isLoopback(url) {
   return url.hostname === 'localhost' || url.hostname === '[::1]' || /^127\./.test(url.hostname);
 }
 
-function delay(ms, signal) {
-  if (signal.aborted) return Promise.reject(abortError());
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
-    const abort = () => { clearTimeout(timer); cleanup(); reject(abortError()); };
-    const cleanup = () => signal.removeEventListener('abort', abort);
-    signal.addEventListener('abort', abort, { once: true });
-  });
-}
-
-async function readStream(response, protocol, signal, emit, maxLineChars) {
+async function readStream(response, protocol, signal, emit, maxLineChars, maxEventChars, markNetworkError) {
   if (!response.body) throw new StreamInterruptedError('The response has no stream');
   const reader = response.body.getReader();
   const abort = () => { reader.cancel().catch(() => {}); };
   signal.addEventListener('abort', abort, { once: true });
-  let buffer = '';
   let complete = false;
   let finishReason = null;
   const decoder = new TextDecoder();
   const line = (raw) => {
     if (protocol === 'openai') {
-      const text = raw.trim();
-      if (!text.startsWith('data:')) return;
-      const data = text.slice(5).trim();
-      if (data === '[DONE]') { complete = true; return; }
+      const data = raw.trim();
+      if (data === '[DONE]') { complete = true; return false; }
       if (!data) return;
       let event;
       try { event = JSON.parse(data); }
       catch { throw new Error('Invalid OpenAI-compatible stream event'); }
+      if (!event || typeof event !== 'object' || Array.isArray(event)) throw new Error('Invalid OpenAI-compatible stream event');
       if (event.error) throw new Error(event.error.message || 'Model stream error');
       const choice = event.choices?.[0];
       if (choice?.delta?.tool_calls?.length || choice?.delta?.function_call || choice?.finish_reason === 'tool_calls' || choice?.finish_reason === 'function_call') throw new UnsupportedModelOutputError();
@@ -76,46 +57,33 @@ async function readStream(response, protocol, signal, emit, maxLineChars) {
       let event;
       try { event = JSON.parse(text); }
       catch { throw new Error('Invalid Ollama stream event'); }
+      if (!event || typeof event !== 'object' || Array.isArray(event)) throw new Error('Invalid Ollama stream event');
       if (event.error) throw new Error(String(event.error));
       if (event.message?.tool_calls?.length) throw new UnsupportedModelOutputError();
       if (typeof event.done_reason === 'string') finishReason = event.done_reason;
       const content = event.message?.content;
       if (typeof content === 'string' && content) emit(content);
-      if (event.done === true) complete = true;
+      if (event.done === true) { complete = true; return false; }
     }
   };
-  // Limit *each protocol line*, not the entire answer. A response can have
-  // arbitrarily many short lines without growing our parser's pending buffer.
-  // Decode large network chunks in small slices to avoid huge intermediate strings.
-  const processText = text => {
-    let start = 0;
-    while (start < text.length && !complete) {
-      const newline = text.indexOf('\n', start);
-      const end = newline < 0 ? text.length : newline;
-      const segmentLength = end - start;
-      if (buffer.length + segmentLength > maxLineChars) {
-        throw new StreamLineTooLongError(maxLineChars);
-      }
-      buffer += text.slice(start, end);
-      if (newline < 0) break;
-      const current = buffer;
-      buffer = '';
-      line(current);
-      start = newline + 1;
-    }
-  };
+  const parser = protocol === 'openai'
+    ? createSseParser({ maxLineChars, maxEventChars, onData: line })
+    : createLineParser({ maxLineChars, onLine: line });
   try {
     while (!complete) {
-      const { value, done } = await reader.read();
+      let chunk;
+      try { chunk = await reader.read(); }
+      catch (error) { markNetworkError('read'); throw error; }
+      const { value, done } = chunk;
       if (signal.aborted) throw abortError();
       if (done) {
-        processText(decoder.decode());
-        if (!complete && buffer.trim()) line(buffer);
+        parser.push(decoder.decode());
+        parser.finish(protocol === 'ollama');
         break;
       }
       for (let start = 0; start < value.byteLength && !complete; start += MAX_DECODE_CHUNK_BYTES) {
         const bytes = value.subarray(start, start + MAX_DECODE_CHUNK_BYTES);
-        processText(decoder.decode(bytes, { stream: true }));
+        parser.push(decoder.decode(bytes, { stream: true }));
       }
     }
     if (!complete) throw new StreamInterruptedError();
@@ -141,9 +109,11 @@ export async function streamLocalChat({
   signal,
   onEvent,
   headers,
-  fetchImpl,
+  fetchImpl = globalThis.fetch,
+  shouldRetryError = defaultShouldRetryError,
   allowRemoteRetries = false,
   maxLineChars = DEFAULT_MAX_LINE_CHARS,
+  maxEventChars = maxLineChars,
 } = {}) {
   if (protocol !== 'openai' && protocol !== 'ollama') throw new TypeError('protocol must be openai or ollama');
   if (!model || typeof model !== 'string') throw new TypeError('model is required');
@@ -156,6 +126,11 @@ export async function streamLocalChat({
   if (!Number.isSafeInteger(maxLineChars) || maxLineChars < 1 || maxLineChars > HARD_MAX_LINE_CHARS) {
     throw new RangeError('maxLineChars must be an integer between 1 and 4194304');
   }
+  if (!Number.isSafeInteger(maxEventChars) || maxEventChars < 1 || maxEventChars > HARD_MAX_LINE_CHARS) {
+    throw new RangeError('maxEventChars must be an integer between 1 and 4194304');
+  }
+  if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl must be a function');
+  if (typeof shouldRetryError !== 'function') throw new TypeError('shouldRetryError must be a function');
   const base = new URL(endpoint);
   if (retries > 0 && !isLoopback(base) && !allowRemoteRetries) {
     throw new Error('Retries for remote servers require allowRemoteRetries: true');
@@ -177,6 +152,11 @@ export async function streamLocalChat({
   signal?.addEventListener('abort', callerAbort, { once: true });
   const timer = setTimeout(() => { expired = true; controller.abort(); }, timeoutMs);
   const started = performance.now();
+  const remainingMs = () => timeoutMs - (performance.now() - started);
+  const checkDeadline = () => {
+    if (expired || remainingMs() <= 0) throw new RequestTimeoutError(timeoutMs);
+    if (controller.signal.aborted) throw abortError();
+  };
   let partial = false;
   let attempts = 0;
   let callbackFailed = false;
@@ -187,19 +167,27 @@ export async function streamLocalChat({
   };
   try {
     for (let attempt = 1; attempt <= retries + 1; attempt++) {
+      checkDeadline();
       attempts = attempt;
       partial = false;
+      let networkPhase = null;
       emit({ type: 'attempt', attempt });
       try {
-        const remaining = Math.max(1, Math.ceil(timeoutMs - (performance.now() - started)));
+        checkDeadline();
+        const remaining = Math.max(1, Math.ceil(remainingMs()));
         const finishReason = await reliableRequest(url, {
           method: 'POST', body, headers: requestHeaders, retries: 0,
-          timeoutMs: remaining, signal: controller.signal, fetchImpl,
+          timeoutMs: remaining, signal: controller.signal,
+          fetchImpl: async (...args) => {
+            try { return await fetchImpl(...args); }
+            catch (error) { networkPhase = 'fetch'; throw error; }
+          },
           consume: (response, readSignal) => readStream(response, protocol, readSignal, text => {
             partial = true;
             emit({ type: 'delta', attempt, text });
-          }, maxLineChars),
+          }, maxLineChars, maxEventChars, phase => { networkPhase = phase; }),
         });
+        checkDeadline();
         const completion = finishReason === null ? {} : { finishReason };
         emit({ type: 'done', attempt, ...completion });
         return { attempts, ...completion };
@@ -207,14 +195,21 @@ export async function streamLocalChat({
         if (callbackFailed) throw error;
         if (expired || error instanceof RequestTimeoutError) throw new RequestTimeoutError(timeoutMs);
         if (controller.signal.aborted) throw abortError();
-        const retryable = error instanceof StreamInterruptedError || error instanceof TypeError ||
-          (error instanceof HttpError && RETRY_STATUSES.has(error.status));
-        if (!retryable || attempt > retries) throw error;
-        if (error instanceof HttpError) error.response.body?.cancel().catch(() => {});
-        emit({ type: 'retry', attempt, error, partial });
-        try { await delay(Math.min(200 * 2 ** (attempt - 1), 3_000), controller.signal); }
+        checkDeadline();
+        if (attempt > retries) throw error;
+        const http = error instanceof HttpError;
+        const retryable = http ? isRetryableStatus(error.status)
+          : error instanceof StreamInterruptedError ||
+            (networkPhase !== null && shouldRetryError(error, { attempt, method: 'POST', phase: networkPhase }) === true);
+        if (!retryable) throw error;
+        if (http) discardResponse(error.response);
+        const delayMs = retryDelayMs({ attempt, response: http ? error.response : undefined, remainingMs: remainingMs() });
+        if (delayMs === null) throw new RequestTimeoutError(timeoutMs, 'Retry delay cannot fit within the ' + timeoutMs + ' ms total timeout');
+        emit({ type: 'retry', attempt, error, partial, delayMs });
+        checkDeadline();
+        try { await pause(delayMs, controller.signal); }
         catch (waitError) { if (expired) throw new RequestTimeoutError(timeoutMs); throw waitError; }
-        if (expired) throw new RequestTimeoutError(timeoutMs);
+        checkDeadline();
         if (partial) emit({ type: 'reset', attempt: attempt + 1 });
       }
     }
