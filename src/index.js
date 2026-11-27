@@ -89,7 +89,8 @@ export async function reliableRequest(input, options = {}) {
         response = await fetchImpl(input, { ...init, method, signal: controller.signal });
       } catch (error) {
         checkDeadline();
-        if (!canRetry || attempt > retries || shouldRetryError(error, { attempt, method, phase: 'fetch' }) !== true) throw error;
+        if (!canRetry || attempt > retries || error?.name === 'AbortError' || error instanceof RequestTimeoutError ||
+          shouldRetryError(error, { attempt, method, phase: 'fetch' }) !== true) throw error;
         await waitToRetry(attempt);
         continue;
       }

@@ -196,7 +196,7 @@ export async function streamLocalChat({
         if (expired || error instanceof RequestTimeoutError) throw new RequestTimeoutError(timeoutMs);
         if (controller.signal.aborted) throw abortError();
         checkDeadline();
-        if (attempt > retries) throw error;
+        if (attempt > retries || error?.name === 'AbortError') throw error;
         const http = error instanceof HttpError;
         const retryable = http ? isRetryableStatus(error.status)
           : error instanceof StreamInterruptedError ||
